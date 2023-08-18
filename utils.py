@@ -14,10 +14,17 @@ from torchvision import transforms
 
 
 def do_training(hparams, model_constructor):
+    pl.seed_everything(hparams.seed)
+    torch.manual_seed(hparams.seed)
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
+    np.random.seed(hparams.seed)
+    random.seed(hparams.seed)
+    
     # instantiate model
     model = model_constructor(**vars(hparams))
     # set all sorts of training parameters
-    hparams.gpus = -1
+    # hparams.gpus = 2
     hparams.accelerator = "ddp"
     hparams.benchmark = True
 
@@ -34,15 +41,21 @@ def do_training(hparams, model_constructor):
     hparams.sync_batchnorm = True
 
     ttlogger = pl.loggers.TestTubeLogger(
-        "checkpoints", name=hparams.exp_name, version=hparams.version
+        hparams.ckpt_save_path+"checkpoints", name=hparams.exp_name, version=hparams.version
     )
 
-    hparams.callbacks = make_checkpoint_callbacks(hparams.exp_name, hparams.version)
+    hparams.callbacks = make_checkpoint_callbacks(hparams.exp_name, hparams.version, hparams.ckpt_save_path+'checkpoints')
 
-    wblogger = get_wandb_logger(hparams)
-    hparams.logger = [wblogger, ttlogger]
+
+    '''
+        TODO: neptune
+    '''
+    # wblogger = get_wandb_logger(hparams)
+    # hparams.logger = [wblogger, ttlogger]
+    hparams.logger = [ttlogger]
 
     trainer = pl.Trainer.from_argparse_args(hparams)
+
     trainer.fit(model)
     
 
@@ -87,6 +100,18 @@ def get_default_argument_parser():
     parser.add_argument(
         "--project_name", type=str, default="lightseg", help="project name for logging"
     )
+    
+    parser.add_argument(
+        "--version", type=int, default=0, help="version of trained model",
+    )
+    
+    parser.add_argument(
+        "--seed", type=int, default=0, help="seed value",
+    )
+    
+    parser.add_argument(
+        "--ckpt_save_path", type=str, default='', help="checkpoint save path"
+    )
 
     return parser
 
@@ -100,10 +125,20 @@ def make_checkpoint_callbacks(exp_name, version, base_path="checkpoints", freque
         verbose=True,
     )
 
+    '''
+        monitor list for fss(zss)
+        - fewshot_val_loss
+        - fewshot_val_miou
+        - fewshot_val_fb_iou
+        - train_loss
+        - fewshot_trn_loss
+        - fewshot_trn_miou
+        - fewshot_trn_fb_iou
+    '''
     val_callback = pl.callbacks.ModelCheckpoint(
-        monitor="val_acc_epoch",
+        monitor="fewshot_val_miou",
         dirpath=f"{base_path}/{exp_name}/version_{version}/checkpoints/",
-        filename="result-{epoch}-{val_acc_epoch:.2f}",
+        filename="result-{epoch}-{fewshot_val_miou:.2f}",
         mode="max",
         save_top_k=3,
         verbose=True,

@@ -203,6 +203,61 @@ class LSeg(BaseModel):
         out = self.scratch.output_conv(out)
             
         return out
+    
+    def get_img_text_features(self, x, labelset=''):
+        if labelset == '':
+            text = self.text
+        else:
+            text = clip.tokenize(labelset)    
+        
+        if self.channels_last == True:
+            x.contiguous(memory_format=torch.channels_last)
+
+        layer_1, layer_2, layer_3, layer_4 = forward_vit(self.pretrained, x)
+
+        layer_1_rn = self.scratch.layer1_rn(layer_1)
+        layer_2_rn = self.scratch.layer2_rn(layer_2)
+        layer_3_rn = self.scratch.layer3_rn(layer_3)
+        layer_4_rn = self.scratch.layer4_rn(layer_4)
+
+        path_4 = self.scratch.refinenet4(layer_4_rn)
+        path_3 = self.scratch.refinenet3(path_4, layer_3_rn)
+        path_2 = self.scratch.refinenet2(path_3, layer_2_rn)
+        path_1 = self.scratch.refinenet1(path_2, layer_1_rn)
+
+        text = text.to(x.device)
+        self.logit_scale = self.logit_scale.to(x.device)
+        text_features = self.clip_pretrained.encode_text(text)
+
+        image_features = self.scratch.head1(path_1)
+
+        imshape = image_features.shape
+        print(imshape)
+        image_features = image_features.permute(0,2,3,1).reshape(-1, self.out_c)
+
+        # normalized features
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        
+        # logits_per_image = self.logit_scale * image_features.half() @ text_features.t()
+
+        # out = logits_per_image.float().view(imshape[0], imshape[2], imshape[3], -1).permute(0,3,1,2)
+
+        # if self.arch_option in [1, 2]:
+        #     for _ in range(self.block_depth - 1):
+        #         out = self.scratch.head_block(out)
+        #     out = self.scratch.head_block(out, False)
+
+        # out = self.scratch.output_conv(out)
+            
+        # return out
+        
+        ## CLIP visual feature
+        clip_img = F.interpolate(x, (224,224))
+        clip_features = self.clip_pretrained.get_image_features(clip_img)
+        clip_features = clip_features / clip_features.norm(dim=-1, keepdim=True)
+        
+        return image_features.half(), text_features, clip_features
 
 
 class LSegNet(LSeg):

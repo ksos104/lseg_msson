@@ -5,7 +5,6 @@ import torchvision.transforms as transforms
 from argparse import ArgumentParser
 import pytorch_lightning as pl
 from .lsegmentation_module_zs import LSegmentationModuleZS
-from .models.lseg_net_zs import LSegNetZS, LSegRNNetZS
 from encoding.models.sseg.base import up_kwargs
 import os
 import clip
@@ -15,6 +14,8 @@ import glob
 from PIL import Image
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from .models.tokencut_clip_zs import TokenCut_CLIP
 
 
 class LSegModuleZS(LSegmentationModuleZS):
@@ -31,28 +32,42 @@ class LSegModuleZS(LSegmentationModuleZS):
         elif kwargs["use_pretrained"] in ['True', True]:
             use_pretrained = True
 
-        if kwargs["backbone"] in ["clip_resnet101"]:
-            self.net = LSegRNNetZS(
-                label_list=label_list,
-                backbone=kwargs["backbone"],
-                features=kwargs["num_features"],
-                aux=kwargs["aux"],
-                use_pretrained=use_pretrained,
-                arch_option=kwargs["arch_option"],
-                block_depth=kwargs["block_depth"],
-                activation=kwargs["activation"],
-            )
-        else:
-            self.net = LSegNetZS(
-                label_list=label_list,
-                backbone=kwargs["backbone"],
-                features=kwargs["num_features"],
-                aux=kwargs["aux"],
-                use_pretrained=use_pretrained,
-                arch_option=kwargs["arch_option"],
-                block_depth=kwargs["block_depth"],
-                activation=kwargs["activation"],
-            )
+        # if kwargs["backbone"] in ["clip_resnet101"]:
+        #     self.net = LSegRNNetZS(
+        #         label_list=label_list,
+        #         backbone=kwargs["backbone"],
+        #         features=kwargs["num_features"],
+        #         aux=kwargs["aux"],
+        #         use_pretrained=use_pretrained,
+        #         arch_option=kwargs["arch_option"],
+        #         block_depth=kwargs["block_depth"],
+        #         activation=kwargs["activation"],
+        #     )
+        # else:
+        #     self.net = LSegNetZS(
+        #         label_list=label_list,
+        #         backbone=kwargs["backbone"],
+        #         features=kwargs["num_features"],
+        #         aux=kwargs["aux"],
+        #         use_pretrained=use_pretrained,
+        #         arch_option=kwargs["arch_option"],
+        #         block_depth=kwargs["block_depth"],
+        #         activation=kwargs["activation"],
+        #     )
+        self.net = TokenCut_CLIP(
+            label_list=label_list,
+            backbone=kwargs["backbone"],
+            features=kwargs["num_features"],
+            # aux=kwargs["aux"],
+            use_pretrained=use_pretrained,
+            arch_option=kwargs["arch_option"],
+            # block_depth=kwargs["block_depth"],
+            # activation=kwargs["activation"],
+            arch=kwargs["arch"],
+            patch_size=kwargs["patch_size"],
+            image_size=kwargs["img_size"],
+            n_iter=kwargs["n_iter"],
+        )
 
     def get_labels(self, dataset):
         labels = []
@@ -143,6 +158,41 @@ class LSegModuleZS(LSegmentationModuleZS):
             choices=['relu', 'lrelu', 'tanh'],
             default="relu",
             help="use which activation to activate the block",
+        )
+        
+        parser.add_argument(
+            "--gpus",
+            type=int,
+            default=1,
+            help="num of gpus",
+        )
+        
+        parser.add_argument(
+            "--arch",
+            type=str,
+            default="vit_small",
+            help="",
+        )
+        
+        parser.add_argument(
+            "--patch_size",
+            type=int,
+            default=8,
+            help="",
+        )
+        
+        parser.add_argument(
+            "--img_size",
+            type=tuple,
+            default=(480,480),
+            help="",
+        )
+        
+        parser.add_argument(
+            "--n_iter",
+            type=int,
+            default=10,
+            help="",
         )
 
         return parser

@@ -1,0 +1,87 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            // "program": "train_tc_zs.py",
+            // "program": "train_lseg_zs_proxy.py",
+            "program": "train_lseg_zs_mask.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {"CUDA_VISIBLE_DEVICES": "4",
+                    "CUDA_LAUNCH_BLOCKING": "1"},
+            "args": [
+                "--dataset", "pascal",
+                "--data_path", "/mnt/server14_hard1/msson/datasets/zs3_datasets",
+                "--batch_size", "1",
+                "--exp_name", "lseg_pascal_zs_debug",
+                "--base_lr", "0.1",
+                "--weight_decay", "1e-4",
+                "--no-scaleinv",
+                "--max_epoch", "3",
+                "--widehead", 
+                "--accumulate_grad_batches", "2",
+                "--backbone", "clip_vitl16_384",
+                "--gpus", "1",
+                "--no_resume",
+                "--fold", "0",
+                "--version", "0",
+                "--seed", "42",
+                // "--use_proxy",
+                // "--ckpt_save_path", "/mnt/server14_hard1/msson/lang-seg/"
+            ]
+        }
+    ]
+}
+
+
+
+// {
+//     // Use IntelliSense to learn about possible attributes.
+//     // Hover to view descriptions of existing attributes.
+//     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//     "version": "0.2.0",
+//     "configurations": [
+//         {
+//             "name": "Python: Current File",
+//             "type": "python",
+//             "request": "launch",
+//             // "program": "train_lseg_zs_mask.py",
+//             "program": "test_lseg_zs_mask.py",
+//             "console": "integratedTerminal",
+//             "justMyCode": false,
+//             "env": {"CUDA_VISIBLE_DEVICES": "4",
+//                     "CUDA_LAUNCH_BLOCKING": "1"},
+//             "args": [
+//                 "--dataset", "pascal",
+//                 "--datapath", "/mnt/server14_hard1/msson/datasets/zs3_datasets",
+//                 "--bsz", "1",
+//                 // "--exp_name", "lseg_pascal_zs_debug",
+//                 // "--exp_name", "lseg_pascal_zs_compare_mask",
+//                 // "--base_lr", "0.004",
+//                 // "--weight_decay", "1e-4",
+//                 "--no-scaleinv",
+//                 // "--max_epoch", "3",
+//                 "--widehead", 
+//                 // "--accumulate_grad_batches", "2",
+//                 "--backbone", "clip_vitl16_384",
+//                 // "--gpus", "1",
+//                 "--fold", "0",
+//                 // "--version", "0",
+//                 "--seed", "42",
+//                 // "--weights", "checkpoints/lseg_pascal_zs_compare_mask/version_0/checkpoints/result-epoch=0-fewshot_val_miou=44.61.ckpt",
+//                 // "--weights", "checkpoints/lseg_pascal_zs_compare_tar_oth/version_0/checkpoints/result-epoch=0-fewshot_val_miou=61.07.ckpt",
+//                 "--weights", "checkpoints/lseg_pascal_zs_mask_v8/version_0/checkpoints/result-epoch=0-fewshot_val_miou=60.10.ckpt",
+//                 "--eval",
+
+//                 // "--use_proxy",
+//                 // "--ckpt_save_path", "/mnt/server14_hard1/msson/lang-seg/"
+//             ]
+//         }
+//     ]
+// }

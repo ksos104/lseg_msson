@@ -53,6 +53,7 @@ class LSegmentationModuleZS(pl.LightningModule):
 
         # fewshot hyperparameters
         self.cross_entropy_loss = nn.CrossEntropyLoss()
+        self.bce_loss = nn.BCELoss()
         self.args = self.get_fewshot_args()
         if data_path:
             self.args.datapath = data_path
@@ -75,15 +76,38 @@ class LSegmentationModuleZS(pl.LightningModule):
         self.fewshot_trn_loss = 100
         self.fewshot_trn_miou = 0
         self.fewshot_trn_fb_iou = 0
+        
+        from .models.lseg_vit_zs import _make_pretrained_clip_vitl16_384
+        label_list = ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog', 'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+        texts = []
+        for class_i in range(len(label_list)):
+            text = clip.tokenize(label_list[class_i])
+            texts.append(text)
+            
+        clip_pretrained, pretrained = _make_pretrained_clip_vitl16_384(pretrained=True)
+        
+        text_features = [clip_pretrained.encode_text(text.cuda()) for text in texts]
+        text_features = [text_feature / text_feature.norm(dim=-1, keepdim=True) for text_feature in text_features]
+        
+        text_features = torch.cat(text_features)
+        
+        self.affinity_map = text_features @ text_features.t()
+        
+        self.dice_weight = 1
+        self.class_weight = 0.5
+        self.self_sim_weight = 1
+        self.neg_sim_weight = 1
+        self.entropy_weight = 0.1
+        
 
     def get_fewshot_args(self):
         return Fewshot_args()
         
-    def forward(self, x, class_info):
-        return self.net(x, class_info)
+    def forward(self, x, class_info, target=None, img_name=''):
+        return self.net(x, class_info, target, img_name)
     
 
-    def training_step(self, batch, batch_nb):
+    def training_step(self, batch, batch_nb):        
         if self.args.finetune_mode:
             if self.args.nshot == 5:
                 bshape = batch['support_imgs'].shape
@@ -119,18 +143,27 @@ class LSegmentationModuleZS(pl.LightningModule):
                 else:
                     area_inter, area_union = Evaluator.classify_prediction(out.argmax(dim=1), target)
         else:
-            img = torch.cat([batch['support_imgs'].squeeze(1), batch['query_img']], dim=0)
-            target = torch.cat([batch['support_masks'].squeeze(1), batch['query_mask']], dim=0)
-            class_info=torch.cat([batch['class_id'], batch['class_id']], dim=0)
+            if self.args.nshot != 0:
+                img = torch.cat([batch['support_imgs'].squeeze(1), batch['query_img']], dim=0)
+                target = torch.cat([batch['support_masks'].squeeze(1), batch['query_mask']], dim=0)
+                class_info=torch.cat([batch['class_id'], batch['class_id']], dim=0)
+            else:
+                img = batch['query_img']
+                target = batch['query_mask']
+                class_info = batch['class_id']
+            img_name = batch['query_name']
             with amp.autocast(enabled=self.enabled):
-                out = self(img, class_info)
-                loss = self.criterion(out, target)
+                out, gt_out, dice_loss, class_loss, self_sim_loss, neg_sim_loss, entropy_loss = self(img, class_info, target, img_name)
+                loss = self.criterion(out, target) + self.BCE_loss(gt_out, target) + (self.dice_weight * dice_loss) + (self.class_weight * class_loss) + (self.self_sim_weight * self_sim_loss) + (self.neg_sim_weight * neg_sim_loss) + (self.entropy_weight * entropy_loss)
                 loss = self.scaler.scale(loss)
 
             self.log("train_loss", loss)
             # 3. Evaluate prediction
             if self.args.benchmark == 'pascal' and batch['query_ignore_idx'] is not None:
-                query_ignore_idx = torch.cat([batch['support_ignore_idxs'].squeeze(1), batch['query_ignore_idx']], dim=0)
+                if self.args.nshot != 0:
+                    query_ignore_idx = torch.cat([batch['support_ignore_idxs'].squeeze(1), batch['query_ignore_idx']], dim=0)
+                else:
+                    query_ignore_idx = batch['query_ignore_idx']
                 area_inter, area_union = Evaluator.classify_prediction(out.argmax(dim=1), target, query_ignore_idx)
             else:
                 area_inter, area_union = Evaluator.classify_prediction(out.argmax(dim=1), target)
@@ -174,8 +207,9 @@ class LSegmentationModuleZS(pl.LightningModule):
             img = batch['query_img'].squeeze(1)
             target = batch['query_mask'].squeeze(1)
             class_info = batch['class_id']
-            out = self(img, class_info)
-            val_loss = self.criterion(out, target)
+            img_name = batch['query_name']
+            out, gt_out, dice_loss, class_loss, self_sim_loss, neg_sim_loss, entropy_loss = self(img, class_info, target, img_name)
+            val_loss = self.criterion(out, target) + self.BCE_loss(gt_out, target) + (self.dice_weight * dice_loss) + (self.class_weight * class_loss) + (self.self_sim_weight * self_sim_loss) + (self.neg_sim_weight * neg_sim_loss) + (self.entropy_weight * entropy_loss)
             # 3. Evaluate prediction
             if self.args.benchmark == 'pascal' and batch['query_ignore_idx'] is not None:
                 query_ignore_idx = batch['query_ignore_idx'].squeeze(1)
@@ -307,7 +341,8 @@ class LSegmentationModuleZS(pl.LightningModule):
                 self.args.bsz, 
                 self.args.nworker, 
                 self.args.fold,
-                'trn')
+                'trn',
+                self.args.nshot)
 
         self.len_train_dataloader = len(dataloader) // torch.cuda.device_count()
         self.train_average_meter = AverageMeter(dataloader.dataset)
@@ -341,6 +376,13 @@ class LSegmentationModuleZS(pl.LightningModule):
         gt_mask = gt_mask.view(bsz, -1).long()
 
         return self.cross_entropy_loss(logit_mask, gt_mask)
+    
+    def BCE_loss(self, logit_mask, gt_mask):
+        bsz = logit_mask.size(0)
+        logit_mask = logit_mask.view(bsz, -1)
+        gt_mask = gt_mask.view(bsz, -1)
+
+        return self.bce_loss(logit_mask, gt_mask)
 
     
     @staticmethod

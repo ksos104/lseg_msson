@@ -1,4 +1,4 @@
-from modules.lseg_module import LSegModule
+from modules_lseg.lseg_module import LSegModule
 from utils import do_training, get_default_argument_parser
 
 if __name__ == "__main__":

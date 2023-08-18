@@ -129,3 +129,6 @@ dmypy.json
 .pyre/
 checkpoints/
 logs/
+
+## lseg_msson
+vis_mask*
